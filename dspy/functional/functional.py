@@ -286,6 +286,31 @@ class TypedPredictor(dspy.Module):
 
         return signature
 
+    def extract_valid_json(self, input_string):
+        """
+        Patch Christian Mauceri
+        This function extracts a valid JSON object at the beginning of a string.
+
+        :param input_string: The input string
+        :return: A tuple containing the extracted JSON object and the remaining part of the string
+        """
+        json_obj = None
+        end_index = -1
+
+        # Look for the end position of the valid JSON object
+        for i in range(len(input_string)):
+            try:
+                json_obj = json.loads(input_string[:i+1])
+                end_index = i + 1
+            except json.JSONDecodeError:
+                continue
+
+        # If a JSON object was found
+        if json_obj is not None:
+            return json_obj, input_string[end_index:]
+        else:
+            raise ValueError("No valid JSON object found at the beginning of the string.")
+
     def forward(self, **kwargs) -> dspy.Prediction:
         modified_kwargs = kwargs.copy()
         # We have to re-prepare the signature on every forward call, because the base
@@ -301,6 +326,8 @@ class TypedPredictor(dspy.Module):
                 for name, field in signature.output_fields.items():
                     try:
                         value = completion[name]
+                        valid_json_object, remaining = self.extract_valid_json(value)
+                        value = json.dumps(valid_json_object)
                         parser = field.json_schema_extra.get("parser", lambda x: x)
                         parsed[name] = parser(value)
                     except (pydantic.ValidationError, ValueError) as e:
